@@ -76,7 +76,7 @@ export default function HomePage() {
     setData({ ...json, top });
   }, []);
 
-  const { updatedAt, live, setLive } = useLiveRefresh(load);
+  const { updatedAt, live, setLive, lastTick } = useLiveRefresh(load);
   const { sorted, sortKey, sortDir, toggle } = useSortableRows(
     data?.top || [],
     "netPnl",
@@ -161,6 +161,7 @@ export default function HomePage() {
             updatedAt={updatedAt}
             live={live}
             onToggle={() => setLive((v) => !v)}
+            lastTick={lastTick}
           />
         </div>
         {msg ? <p className="mt-2 font-mono text-sm text-[var(--accent)]">{msg}</p> : null}

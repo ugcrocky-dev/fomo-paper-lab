@@ -5,7 +5,11 @@ import { readStateAsync } from "@/lib/store";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-export async function POST() {
+/**
+ * Vercel Cron + Live UI keepalive both hit this route.
+ * Accept GET (cron default) and POST (dashboard keepalive).
+ */
+async function handleTick() {
   try {
     const state = await readStateAsync();
     const running = state.bots.filter(
@@ -16,7 +20,12 @@ export async function POST() {
       autoStarted = await startMany("all");
     }
     const result = await tickRunningBots();
-    return NextResponse.json({ ok: true, autoStarted, ...result });
+    return NextResponse.json({
+      ok: true,
+      autoStarted,
+      at: new Date().toISOString(),
+      ...result,
+    });
   } catch (e) {
     return NextResponse.json(
       { ok: false, error: e instanceof Error ? e.message : String(e) },
@@ -25,6 +34,10 @@ export async function POST() {
   }
 }
 
+export async function POST() {
+  return handleTick();
+}
+
 export async function GET() {
-  return POST();
+  return handleTick();
 }

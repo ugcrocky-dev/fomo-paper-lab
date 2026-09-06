@@ -7,9 +7,9 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 /**
- * Hourly optimizer (Vercel cron) + manual "Optimize now".
+ * Daily optimizer (Vercel cron at 00:00 UTC) + manual "Optimize now".
  * Ticks once, then retunes unprofitable bots onto winning playbooks.
- * Pass ?force=1 to ignore the 45m minimum runtime (manual / agent checks).
+ * Pass ?force=1 to ignore the runtime gate (manual / agent checks).
  */
 async function handle(req: NextRequest) {
   try {

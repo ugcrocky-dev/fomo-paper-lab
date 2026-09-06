@@ -39,7 +39,7 @@ export type BotState = {
   id: string;
   strategyId: string;
   /**
-   * Strategy actually executed on ticks. When a bot is unprofitable, hourly
+   * Strategy actually executed on ticks. When a bot is unprofitable, daily
    * optimize points this at a winning playbook while keeping strategyId stable
    * (bot identity / normalize key).
    */

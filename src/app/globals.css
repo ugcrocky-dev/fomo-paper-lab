@@ -1,31 +1,113 @@
 @import "tailwindcss";
 
 :root {
-  --bg: #0a0c10;
-  --panel: #12161d;
-  --line: #243041;
-  --text: #e8eef7;
-  --muted: #8b9bb0;
-  --accent: #3dde9a;
-  --danger: #ff6b7a;
+  --bg: #070a0c;
+  --panel: #121a1e;
+  --line: #243038;
+  --text: #e8f0f2;
+  --muted: #8aa0a8;
+  --accent: #b8f34d;
+  --danger: #ff6b4a;
   --warn: #f0c75e;
+  --ok: #5ddec4;
 }
 
+html,
 body {
-  background:
-    radial-gradient(1200px 600px at 10% -10%, rgba(61, 222, 154, 0.12), transparent 50%),
-    radial-gradient(900px 500px at 100% 0%, rgba(80, 140, 255, 0.1), transparent 45%),
-    var(--bg);
+  margin: 0;
+  min-height: 100%;
   color: var(--text);
-  font-family: var(--font-sans), sans-serif;
+  background:
+    radial-gradient(1000px 500px at 8% -10%, rgba(184, 243, 77, 0.08), transparent 55%),
+    radial-gradient(800px 420px at 100% 0%, rgba(93, 222, 196, 0.05), transparent 45%),
+    var(--bg);
+  font-family: var(--font-sans), system-ui, sans-serif;
 }
 
-.font-mono { font-family: var(--font-mono), monospace; }
+.font-mono {
+  font-family: var(--font-mono), ui-monospace, monospace;
+}
 
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.panel,
 .card {
-  background: color-mix(in oklab, var(--panel) 88%, black);
+  background: linear-gradient(180deg, rgba(18, 26, 30, 0.96), rgba(12, 18, 20, 0.98));
   border: 1px solid var(--line);
 }
 
-.pos { color: var(--accent); }
-.neg { color: var(--danger); }
+.stat {
+  font-variant-numeric: tabular-nums;
+}
+
+.btn {
+  font-family: var(--font-mono), monospace;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--text);
+  padding: 0.65rem 0.9rem;
+  cursor: pointer;
+}
+
+.btn:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-accent {
+  background: var(--accent);
+  color: #10160a;
+  border-color: var(--accent);
+  font-weight: 600;
+}
+
+.btn-accent:hover:not(:disabled) {
+  color: #10160a;
+  filter: brightness(1.05);
+}
+
+.btn-danger:hover:not(:disabled) {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.pos {
+  color: var(--accent);
+}
+
+.neg {
+  color: var(--danger);
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+th,
+td {
+  text-align: left;
+  padding: 0.7rem 0.55rem;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+
+th {
+  font-family: var(--font-mono), monospace;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  font-weight: 500;
+}

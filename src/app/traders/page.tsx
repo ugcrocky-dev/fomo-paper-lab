@@ -1,78 +1,136 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { money, pnlClass } from "@/lib/format";
+import { useCallback, useMemo, useState } from "react";
+import {
+  money,
+  pnlColor,
+  SortTh,
+  useSortableRows,
+} from "@/components/SortableTable";
+import { LiveBadge, useLiveRefresh } from "@/hooks/useLiveRefresh";
+
+type Trader = {
+  rank: number;
+  handle: string;
+  displayName: string;
+  pnlUsd: number;
+  volumeUsd: number;
+  trades: number;
+  followers: number;
+  bags: string;
+};
 
 export default function TradersPage() {
-  const [window, setWindow] = useState<"h24" | "d7" | "d30" | "all">("h24");
-  const [boards, setBoards] = useState<any>(null);
+  const [windowKey, setWindowKey] = useState<"h24" | "d7" | "d30" | "all">("h24");
+  const [boards, setBoards] = useState<Record<string, any[]> | null>(null);
   const [error, setError] = useState("");
 
-  useEffect(() => {
-    fetch("/api/traders")
-      .then((r) => r.json())
-      .then((j) => {
-        if (j.error) setError(j.error);
-        else setBoards(j.boards);
-      });
+  const load = useCallback(async () => {
+    const j = await fetch("/api/traders").then((r) => r.json());
+    if (j.error) {
+      setError(j.error);
+      return;
+    }
+    setError("");
+    setBoards(j.boards || null);
   }, []);
 
-  const traders = boards?.[window] || [];
+  const { updatedAt, live, setLive } = useLiveRefresh(load);
+
+  const traders: Trader[] = useMemo(() => {
+    const list = boards?.[windowKey] || [];
+    return list.map((t: any) => ({
+      rank: t.rank ?? 0,
+      handle: t.handle,
+      displayName: t.displayName || "",
+      pnlUsd: t.pnlUsd ?? 0,
+      volumeUsd: t.volumeUsd ?? 0,
+      trades: t.trades ?? 0,
+      followers: t.followers ?? 0,
+      bags: (t.topTokens || [])
+        .slice(0, 3)
+        .map((tok: any) => (tok.tokenAddress || "").slice(0, 4))
+        .join(" · "),
+    }));
+  }, [boards, windowKey]);
+
+  const { sorted, sortKey, sortDir, toggle } = useSortableRows(traders, "pnlUsd", "desc");
 
   return (
     <div className="space-y-4">
+      <section className="panel flex flex-col gap-3 p-4 lg:flex-row lg:items-center lg:justify-between">
+        <div>
+          <h2 className="text-2xl font-semibold">FOMO traders</h2>
+          <p className="text-sm text-[var(--muted)]">
+            Live leaderboard windows. Tap headers to sort · used by discovery bots.
+          </p>
+        </div>
+        <LiveBadge
+          updatedAt={updatedAt}
+          live={live}
+          onToggle={() => setLive((v) => !v)}
+        />
+      </section>
+
       <div className="flex flex-wrap gap-2">
-        {([
-          ["h24", "24h"],
-          ["d7", "7d"],
-          ["d30", "30d"],
-          ["all", "All"],
-        ] as const).map(([k, label]) => (
+        {(
+          [
+            ["h24", "24h"],
+            ["d7", "7d"],
+            ["d30", "30d"],
+            ["all", "All"],
+          ] as const
+        ).map(([k, label]) => (
           <button
             key={k}
-            onClick={() => setWindow(k)}
-            className={`font-mono text-xs uppercase tracking-wider px-3 py-2 border ${
-              window === k ? "border-[var(--accent)] text-[var(--accent)]" : "border-[var(--line)]"
-            }`}
+            onClick={() => setWindowKey(k)}
+            className="btn"
+            style={
+              windowKey === k
+                ? { borderColor: "var(--accent)", color: "var(--accent)" }
+                : undefined
+            }
           >
             {label}
           </button>
         ))}
       </div>
-      {error ? <p className="text-[var(--danger)] text-sm">{error}</p> : null}
-      <div className="card overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead className="font-mono text-[11px] uppercase text-[var(--muted)]">
-            <tr className="text-left">
-              <th className="px-4 py-2">#</th>
-              <th className="px-4 py-2">Handle</th>
-              <th className="px-4 py-2">PnL</th>
-              <th className="px-4 py-2">Volume</th>
-              <th className="px-4 py-2">Trades</th>
-              <th className="px-4 py-2">Followers</th>
-              <th className="px-4 py-2">Top bags</th>
+
+      {error ? <p className="text-sm text-[var(--danger)]">{error}</p> : null}
+
+      <section className="panel overflow-x-auto">
+        <table>
+          <thead>
+            <tr>
+              <SortTh label="#" column="rank" sortKey={sortKey} sortDir={sortDir} onSort={toggle} />
+              <SortTh label="Handle" column="handle" sortKey={sortKey} sortDir={sortDir} onSort={toggle} />
+              <SortTh label="PnL" column="pnlUsd" sortKey={sortKey} sortDir={sortDir} onSort={toggle} />
+              <SortTh label="Volume" column="volumeUsd" sortKey={sortKey} sortDir={sortDir} onSort={toggle} />
+              <SortTh label="Trades" column="trades" sortKey={sortKey} sortDir={sortDir} onSort={toggle} />
+              <SortTh label="Followers" column="followers" sortKey={sortKey} sortDir={sortDir} onSort={toggle} />
+              <SortTh label="Top bags" column="bags" sortKey={sortKey} sortDir={sortDir} onSort={toggle} />
             </tr>
           </thead>
           <tbody>
-            {traders.map((t: any) => (
-              <tr key={t.handle} className="border-t border-[var(--line)]">
-                <td className="px-4 py-2 font-mono text-xs">{t.rank}</td>
-                <td className="px-4 py-2">
+            {sorted.map((t) => (
+              <tr key={t.handle}>
+                <td className="stat font-mono text-xs">{t.rank}</td>
+                <td>
                   <div className="font-medium">{t.handle}</div>
                   <div className="text-xs text-[var(--muted)]">{t.displayName}</div>
                 </td>
-                <td className={`px-4 py-2 ${pnlClass(t.pnlUsd)}`}>{money(t.pnlUsd, 0)}</td>
-                <td className="px-4 py-2">{money(t.volumeUsd, 0)}</td>
-                <td className="px-4 py-2">{t.trades}</td>
-                <td className="px-4 py-2">{t.followers}</td>
-                <td className="px-4 py-2 text-xs text-[var(--muted)]">
-                  {(t.topTokens || []).slice(0, 3).map((tok: any) => tok.tokenAddress.slice(0, 4)).join(" · ")}
+                <td className="stat" style={{ color: pnlColor(t.pnlUsd) }}>
+                  {money(t.pnlUsd, 0)}
                 </td>
+                <td className="stat">{money(t.volumeUsd, 0)}</td>
+                <td className="stat">{t.trades}</td>
+                <td className="stat">{t.followers}</td>
+                <td className="font-mono text-xs text-[var(--muted)]">{t.bags}</td>
               </tr>
             ))}
           </tbody>
         </table>
-      </div>
+      </section>
     </div>
   );
 }

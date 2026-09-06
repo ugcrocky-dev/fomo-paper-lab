@@ -157,7 +157,7 @@ export default function HomePage() {
             </p>
             <h2 className="mt-1 text-3xl font-semibold">Race 100 strategies in paper</h2>
             <p className="mt-2 max-w-2xl text-[var(--muted)]">
-              Net PnL = equity − $1,000 after fees. Hourly optimize retunes losers onto
+              Net PnL = equity − $1,000 after fees. Daily optimize retunes losers onto
               winning playbooks. Tap headers to sort · Live refreshes the UI every 10s.
             </p>
           </div>
@@ -236,7 +236,7 @@ export default function HomePage() {
       <section className="panel overflow-x-auto">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--line)] px-4 py-3">
           <h3 className="font-mono text-xs uppercase tracking-[0.16em]">
-            Hourly optimize log
+            Daily optimize log
           </h3>
           <p className="font-mono text-[11px] text-[var(--muted)]">
             last{" "}

@@ -6,7 +6,8 @@ import { BotState, OptimizeAction, STARTING_BANKROLL } from "../types";
 /** Minimum sample before we judge a strategy. */
 const MIN_TRADES = 6;
 /** Don't retune until the bot has been running at least this long. */
-const MIN_RUNTIME_MS = 45 * 60 * 1000;
+/** Wait ~a day before auto-retuning so we don't flatten mid-session noise. */
+const MIN_RUNTIME_MS = 20 * 60 * 60 * 1000;
 /** Retune when net PnL is at or below this (dollars). */
 const LOSS_THRESHOLD = -20;
 /** Or when drawdown is this bad and PnL is negative. */
@@ -58,7 +59,7 @@ export type OptimizeResult = {
 };
 
 /**
- * Hourly (or on-demand) pass: flatten + retune unprofitable bots onto
+ * Daily (or on-demand) pass: flatten + retune unprofitable bots onto
  * currently winning playbooks. Keeps bot identity (strategyId) stable.
  */
 export async function optimizeLab(opts?: {

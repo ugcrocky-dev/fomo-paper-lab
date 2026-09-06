@@ -8,9 +8,9 @@ import { executeIntent, Intent, revalue } from "../paper/broker";
 import { readStateAsync, writeStateAsync } from "../store";
 import {
   BotState,
-  DEFAULT_STOP_LOSS_PCT,
   DEFAULT_TAKE_PROFIT_PCT,
   MAX_POSITION_PCT_BANKROLL,
+  REBUY_COOLDOWN_MS,
   RiskRules,
 } from "../types";
 import { getStrategy } from "../strategies/catalog";
@@ -522,7 +522,10 @@ function maybePromote(bot: BotState, rules: RiskRules) {
   }
 }
 
-/** Hard TP/SL so buy-heavy strategies don't just bleed fees into bags forever. */
+/**
+ * Take-profit overlay only. Global hard SL stop-hunted memecoins every tick
+ * (hundreds of risk_sl fills) and locked losses before strategies could work.
+ */
 function riskExitIntents(bot: BotState): Intent[] {
   const out: Intent[] = [];
   for (const pos of bot.positions) {
@@ -537,18 +540,13 @@ function riskExitIntents(bot: BotState): Intent[] {
         price: pos.markPrice,
         reason: `risk_tp_${Math.round(DEFAULT_TAKE_PROFIT_PCT * 100)}pct`,
       });
-    } else if (ret <= -DEFAULT_STOP_LOSS_PCT) {
-      out.push({
-        tokenAddress: pos.tokenAddress,
-        symbol: pos.symbol,
-        chain: pos.chain,
-        side: "SELL",
-        price: pos.markPrice,
-        reason: `risk_sl_${Math.round(DEFAULT_STOP_LOSS_PCT * 100)}pct`,
-      });
     }
   }
   return out.slice(0, 3);
+}
+
+function tokenKey(chain: string, tokenAddress: string) {
+  return `${chain}:${tokenAddress.toLowerCase()}`;
 }
 
 function positionNotional(bot: BotState, chain: string, tokenAddress: string) {
@@ -561,16 +559,30 @@ function positionNotional(bot: BotState, chain: string, tokenAddress: string) {
   return pos.units * pos.markPrice;
 }
 
-/** Drop buy spam into the same bag once it's already a large book. */
+function setCooldown(bot: BotState, chain: string, tokenAddress: string) {
+  if (!bot.buyCooldownUntil) bot.buyCooldownUntil = {};
+  bot.buyCooldownUntil[tokenKey(chain, tokenAddress)] = new Date(
+    Date.now() + REBUY_COOLDOWN_MS
+  ).toISOString();
+}
+
+function inCooldown(bot: BotState, chain: string, tokenAddress: string) {
+  const until = bot.buyCooldownUntil?.[tokenKey(chain, tokenAddress)];
+  if (!until) return false;
+  return Date.now() < new Date(until).getTime();
+}
+
+/** Drop buy spam into the same bag / recently sold tokens. */
 function filterIntents(bot: BotState, intents: Intent[]): Intent[] {
   const bankroll = bot.startingBankroll || 1000;
   const maxPos = bankroll * MAX_POSITION_PCT_BANKROLL;
   return intents.filter((intent) => {
     if (intent.side !== "BUY") return true;
+    if (inCooldown(bot, intent.chain, intent.tokenAddress)) return false;
     const notional = positionNotional(bot, intent.chain, intent.tokenAddress);
     if (notional >= maxPos) return false;
-    // Keep some dry powder — don't force full deployment every tick.
-    if (bot.cash < bankroll * 0.08) return false;
+    // Keep dry powder — don't force full deployment every tick.
+    if (bot.cash < bankroll * 0.15) return false;
     return true;
   });
 }
@@ -606,10 +618,11 @@ export async function tickRunningBots() {
       const exitIntents = riskExitIntents(bot);
       let made = 0;
       for (const intent of exitIntents) {
-        if (made >= 3) break;
+        if (made >= 2) break;
         if (executeIntent(bot, state.rules, intent)) {
           fills += 1;
           made += 1;
+          setCooldown(bot, intent.chain, intent.tokenAddress);
         }
       }
 
@@ -619,10 +632,13 @@ export async function tickRunningBots() {
           : propIntents(bot, bot.strategyId, boards);
       const intents = filterIntents(bot, rawIntents);
       for (const intent of intents) {
-        if (made >= 3) break;
+        if (made >= 2) break;
         if (executeIntent(bot, state.rules, intent)) {
           fills += 1;
           made += 1;
+          if (intent.side === "SELL") {
+            setCooldown(bot, intent.chain, intent.tokenAddress);
+          }
         }
       }
       bot.lastTickAt = new Date().toISOString();

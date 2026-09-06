@@ -56,6 +56,8 @@ export type BotState = {
   positions: PaperPosition[];
   fills: PaperFill[];
   watchedHandles: string[];
+  /** tokenKey -> ISO time until which new buys of that token are blocked */
+  buyCooldownUntil?: Record<string, string>;
 };
 
 export type RiskRules = {
@@ -93,8 +95,13 @@ export const DEFAULT_RULES: RiskRules = {
   maxDrawdownPctForPromotion: 35,
 };
 
-/** Default risk overlay applied every tick so buy-and-hold bots can exit. */
-export const DEFAULT_TAKE_PROFIT_PCT = 0.12;
-export const DEFAULT_STOP_LOSS_PCT = 0.08;
+/**
+ * Take-profit overlay only. A hard stop-loss was stop-hunting memecoins every
+ * minute (hundreds of risk_sl fills) and locking in losses — then bots rebought.
+ * Strategy-specific cut/trim modes still handle losers deliberately.
+ */
+export const DEFAULT_TAKE_PROFIT_PCT = 0.25;
 /** Cap how deep a bot can average into one bag before needing an exit. */
 export const MAX_POSITION_PCT_BANKROLL = 0.35;
+/** After selling a bag, wait before rebuying the same token (ms). */
+export const REBUY_COOLDOWN_MS = 45 * 60 * 1000;

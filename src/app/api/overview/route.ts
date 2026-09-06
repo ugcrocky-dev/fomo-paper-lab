@@ -26,17 +26,20 @@ export async function GET() {
     };
   });
   rows.sort((a, b) => b.netPnl - a.netPnl);
-  return NextResponse.json({
-    updatedAt: state.updatedAt,
-    strategyCount: state.bots.length,
-    runningCount: state.bots.filter((b) => b.status === "running").length,
-    eligibleCount: state.bots.filter((b) => b.status === "eligible_for_live").length,
-    totalEquity: state.bots.reduce((s, b) => s + b.equity, 0),
-    totalPnl: state.bots.reduce((s, b) => s + (b.equity - STARTING_BANKROLL), 0),
-    totalFees: state.bots.reduce((s, b) => s + b.feesPaid, 0),
-    totalRealized: state.bots.reduce((s, b) => s + b.realizedPnl, 0),
-    totalUnrealized: state.bots.reduce((s, b) => s + b.unrealizedPnl, 0),
-    totalTrades: state.bots.reduce((s, b) => s + b.tradeCount, 0),
-    top: rows.slice(0, 25),
-  });
+  return NextResponse.json(
+    {
+      updatedAt: state.updatedAt,
+      strategyCount: state.bots.length,
+      runningCount: state.bots.filter((b) => b.status === "running").length,
+      eligibleCount: state.bots.filter((b) => b.status === "eligible_for_live").length,
+      totalEquity: state.bots.reduce((s, b) => s + b.equity, 0),
+      totalPnl: state.bots.reduce((s, b) => s + (b.equity - STARTING_BANKROLL), 0),
+      totalFees: state.bots.reduce((s, b) => s + b.feesPaid, 0),
+      totalRealized: state.bots.reduce((s, b) => s + b.realizedPnl, 0),
+      totalUnrealized: state.bots.reduce((s, b) => s + b.unrealizedPnl, 0),
+      totalTrades: state.bots.reduce((s, b) => s + b.tradeCount, 0),
+      top: rows.slice(0, 25),
+    },
+    { headers: { "Cache-Control": "no-store" } }
+  );
 }

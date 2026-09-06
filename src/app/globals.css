@@ -1,0 +1,31 @@
+@import "tailwindcss";
+
+:root {
+  --bg: #0a0c10;
+  --panel: #12161d;
+  --line: #243041;
+  --text: #e8eef7;
+  --muted: #8b9bb0;
+  --accent: #3dde9a;
+  --danger: #ff6b7a;
+  --warn: #f0c75e;
+}
+
+body {
+  background:
+    radial-gradient(1200px 600px at 10% -10%, rgba(61, 222, 154, 0.12), transparent 50%),
+    radial-gradient(900px 500px at 100% 0%, rgba(80, 140, 255, 0.1), transparent 45%),
+    var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans), sans-serif;
+}
+
+.font-mono { font-family: var(--font-mono), monospace; }
+
+.card {
+  background: color-mix(in oklab, var(--panel) 88%, black);
+  border: 1px solid var(--line);
+}
+
+.pos { color: var(--accent); }
+.neg { color: var(--danger); }

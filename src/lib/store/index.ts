@@ -45,6 +45,10 @@ function emptyBot(strategyId: string): BotState {
     fills: [],
     watchedHandles: [],
     buyCooldownUntil: {},
+    execStrategyId: strategyId,
+    adaptationCount: 0,
+    lastAdaptationAt: null,
+    lastAdaptationNote: null,
   };
 }
 
@@ -53,6 +57,8 @@ export function defaultState(): LabState {
     updatedAt: new Date().toISOString(),
     rules: { ...DEFAULT_RULES },
     bots: ALL_STRATEGIES.map((s) => emptyBot(s.id)),
+    optimizeLog: [],
+    lastOptimizeAt: null,
   };
 }
 
@@ -70,12 +76,18 @@ function normalize(parsed: LabState): LabState {
     if (!b.buyCooldownUntil || typeof b.buyCooldownUntil !== "object") {
       b.buyCooldownUntil = {};
     }
+    if (!b.execStrategyId) b.execStrategyId = b.strategyId;
+    if (typeof b.adaptationCount !== "number") b.adaptationCount = 0;
+    if (b.lastAdaptationAt === undefined) b.lastAdaptationAt = null;
+    if (b.lastAdaptationNote === undefined) b.lastAdaptationNote = null;
     if (b.fills.length > MAX_FILLS_PER_BOT) {
       b.fills = b.fills.slice(-MAX_FILLS_PER_BOT);
     }
     return b;
   });
   parsed.rules = { ...DEFAULT_RULES, ...(parsed.rules || {}) };
+  if (!Array.isArray(parsed.optimizeLog)) parsed.optimizeLog = [];
+  if (parsed.lastOptimizeAt === undefined) parsed.lastOptimizeAt = null;
   return parsed;
 }
 

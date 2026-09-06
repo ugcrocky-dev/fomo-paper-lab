@@ -151,6 +151,56 @@ function recordFill(bot: BotState, fill: PaperFill) {
   appendTradeJournal(fill);
 }
 
+/** Sell 100% of every open position (ignores per-trade size caps). */
+export function flattenBot(
+  bot: BotState,
+  rules: RiskRules,
+  reason = "optimize_flatten"
+): PaperFill[] {
+  const out: PaperFill[] = [];
+  const feeRate = rules.chargeTakerFees ? rules.takerFeeRate : 0;
+  for (const pos of [...bot.positions]) {
+    if (!(pos.units > 0) || !(pos.markPrice > 0)) continue;
+    const slip = (rules.slippageBps / 10000) * -1;
+    const px = Math.max(1e-12, pos.markPrice * (1 + slip));
+    const units = pos.units;
+    const proceeds = units * px;
+    const feeUsd = proceeds * feeRate;
+    const net = proceeds - feeUsd;
+    const pnl = net - units * pos.avgPrice;
+    bot.cash += net;
+    bot.feesPaid += feeUsd;
+    bot.realizedPnl += pnl;
+    if (pnl > 0) bot.winCount += 1;
+    bot.positions = bot.positions.filter(
+      (p) =>
+        !(
+          p.chain === pos.chain &&
+          p.tokenAddress.toLowerCase() === pos.tokenAddress.toLowerCase()
+        )
+    );
+    const fill: PaperFill = {
+      id: randomUUID(),
+      botId: bot.id,
+      ts: new Date().toISOString(),
+      tokenAddress: pos.tokenAddress,
+      symbol: pos.symbol,
+      chain: pos.chain,
+      side: "SELL",
+      price: px,
+      sizeUsd: proceeds,
+      units,
+      feeUsd,
+      realizedPnl: pnl,
+      reason,
+    };
+    recordFill(bot, fill);
+    out.push(fill);
+  }
+  mark(bot);
+  return out;
+}
+
 export function revalue(
   bot: BotState,
   marks: { tokenAddress: string; chain: string; price: number }[]

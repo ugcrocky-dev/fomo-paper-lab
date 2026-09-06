@@ -1,11 +1,20 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
-import { money, pnlClass } from "@/lib/format";
+import { useCallback, useMemo, useState } from "react";
+import {
+  money,
+  pnlColor,
+  SortTh,
+  useSortableRows,
+} from "@/components/SortableTable";
+import { FamilySplit, PnlBars } from "@/components/PnlBars";
+import { LiveBadge, useLiveRefresh } from "@/hooks/useLiveRefresh";
 
 type TopBot = {
   id: string;
+  name: string;
+  family: string;
   status: string;
   tradeCount: number;
   equity: number;
@@ -14,7 +23,6 @@ type TopBot = {
   feesPaid: number;
   netPnl: number;
   maxDrawdown: number;
-  strategy?: { name: string; family: string };
 };
 
 type Overview = {
@@ -33,21 +41,59 @@ type Overview = {
 
 export default function HomePage() {
   const [data, setData] = useState<Overview | null>(null);
-  const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState("");
+  const [msg, setMsg] = useState("");
 
   const load = useCallback(async () => {
     const res = await fetch("/api/overview");
-    setData(await res.json());
+    const json = await res.json();
+    const top = (json.top || []).map(
+      (b: {
+        id: string;
+        status: string;
+        tradeCount: number;
+        equity: number;
+        realizedPnl: number;
+        unrealizedPnl: number;
+        feesPaid: number;
+        netPnl: number;
+        maxDrawdown: number;
+        strategy?: { name: string; family: string };
+      }) => ({
+        id: b.id,
+        name: b.strategy?.name || b.id,
+        family: b.strategy?.family || "",
+        status: b.status,
+        tradeCount: b.tradeCount,
+        equity: b.equity,
+        realizedPnl: b.realizedPnl || 0,
+        unrealizedPnl: b.unrealizedPnl || 0,
+        feesPaid: b.feesPaid || 0,
+        netPnl: b.netPnl ?? b.equity - 1000,
+        maxDrawdown: b.maxDrawdown || 0,
+      })
+    );
+    setData({ ...json, top });
   }, []);
 
-  useEffect(() => {
-    load();
-    const id = setInterval(load, 15000);
-    return () => clearInterval(id);
-  }, [load]);
+  const { updatedAt, live, setLive } = useLiveRefresh(load);
+  const { sorted, sortKey, sortDir, toggle } = useSortableRows(
+    data?.top || [],
+    "netPnl",
+    "desc"
+  );
 
-  async function act(action: string) {
+  const familyPnl = useMemo(() => {
+    let trader = 0;
+    let prop = 0;
+    for (const b of data?.top || []) {
+      if (b.family === "trader_discovery") trader += b.netPnl;
+      else prop += b.netPnl;
+    }
+    return { trader, prop };
+  }, [data]);
+
+  async function run(action: string) {
     setBusy(action);
     setMsg("");
     try {
@@ -56,7 +102,7 @@ export default function HomePage() {
         const json = await res.json();
         setMsg(
           json.ok
-            ? `Tick: ${json.ticked} bots, ${json.fills} fills`
+            ? `Tick: ${json.ticked ?? json.autoStarted ?? 0} bots, ${json.fills ?? 0} fills`
             : `Tick failed: ${json.error}`
         );
       } else {
@@ -66,7 +112,11 @@ export default function HomePage() {
           body: JSON.stringify({ action }),
         });
         const json = await res.json();
-        setMsg(JSON.stringify(json));
+        setMsg(
+          action === "stop_all"
+            ? "All bots stopped"
+            : `Started ${json.started ?? 0} bots`
+        );
       }
       await load();
     } finally {
@@ -76,92 +126,135 @@ export default function HomePage() {
 
   return (
     <div className="space-y-6">
-      <section className="card p-5">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+      <section className="panel p-5">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <h2 className="text-xl font-semibold">Race desk</h2>
-            <p className="text-sm text-[var(--muted)]">
-              100 FOMO paper bots × $1,000. Leaderboard copy + proprietary bags. Live trading
-              locked until 7-day gate.
+            <p className="font-mono text-[11px] uppercase tracking-[0.2em] text-[var(--muted)]">
+              Simulation desk · $1,000 / bot · FOMO taker fees on
+            </p>
+            <h2 className="mt-1 text-3xl font-semibold">Race 100 strategies in paper</h2>
+            <p className="mt-2 max-w-2xl text-[var(--muted)]">
+              Net PnL = equity − $1,000 after fees. Tap column headers to sort. Live
+              refresh every 10s — run a tick to advance the book.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
-            {[
-              ["tick", "Run tick"],
-              ["start_all", "Start all"],
-              ["start_traders", "Start traders"],
-              ["start_prop", "Start prop"],
-              ["stop_all", "Stop all"],
-            ].map(([action, label]) => (
-              <button
-                key={action}
-                disabled={!!busy}
-                onClick={() => act(action)}
-                className="font-mono text-xs uppercase tracking-wider px-3 py-2 border border-[var(--line)] hover:border-[var(--accent)] hover:text-[var(--accent)] disabled:opacity-50"
-              >
-                {busy === action ? "…" : label}
-              </button>
-            ))}
+            <button className="btn btn-accent" disabled={!!busy} onClick={() => run("start_all")}>
+              Start all
+            </button>
+            <button className="btn" disabled={!!busy} onClick={() => run("start_traders")}>
+              Trader bots
+            </button>
+            <button className="btn" disabled={!!busy} onClick={() => run("start_prop")}>
+              Prop bots
+            </button>
+            <button className="btn" disabled={!!busy} onClick={() => run("tick")}>
+              Tick now
+            </button>
+            <button className="btn btn-danger" disabled={!!busy} onClick={() => run("stop_all")}>
+              Stop all
+            </button>
           </div>
         </div>
-        {msg ? <p className="mt-3 font-mono text-xs text-[var(--muted)]">{msg}</p> : null}
+        <div className="mt-4">
+          <LiveBadge
+            updatedAt={updatedAt}
+            live={live}
+            onToggle={() => setLive((v) => !v)}
+          />
+        </div>
+        {msg ? <p className="mt-2 font-mono text-sm text-[var(--accent)]">{msg}</p> : null}
       </section>
 
-      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
         {[
-          ["Equity", money(data?.totalEquity ?? 0)],
-          ["Net PnL", money(data?.totalPnl ?? 0)],
-          ["Running", String(data?.runningCount ?? 0)],
-          ["Eligible", String(data?.eligibleCount ?? 0)],
-          ["Trades", String(data?.totalTrades ?? 0)],
-          ["Fees", money(data?.totalFees ?? 0)],
-          ["Realized", money(data?.totalRealized ?? 0)],
-          ["Unrealized", money(data?.totalUnrealized ?? 0)],
-        ].map(([k, v]) => (
-          <div key={k} className="card p-4">
-            <p className="font-mono text-[11px] uppercase tracking-wider text-[var(--muted)]">
-              {k}
+          ["Strategies", data?.strategyCount ?? "—"],
+          ["Running", data?.runningCount ?? "—"],
+          ["Eligible", data?.eligibleCount ?? "—"],
+          ["Trades", data?.totalTrades ?? "—"],
+          ["Equity", data ? money(data.totalEquity) : "—"],
+          ["Fees", data ? money(data.totalFees) : "—"],
+          ["Net PnL", data ? money(data.totalPnl) : "—"],
+        ].map(([label, value]) => (
+          <div key={String(label)} className="panel p-4">
+            <p className="font-mono text-[11px] uppercase tracking-[0.16em] text-[var(--muted)]">
+              {label}
             </p>
-            <p className={`mt-1 text-xl font-semibold ${k.includes("PnL") || k === "Realized" || k === "Unrealized" ? pnlClass(Number(String(v).replace(/[$,]/g, "")) || 0) : ""}`}>
-              {v}
+            <p
+              className="stat mt-2 text-xl font-semibold"
+              style={
+                label === "Net PnL" && data
+                  ? { color: pnlColor(data.totalPnl) }
+                  : undefined
+              }
+            >
+              {value}
             </p>
           </div>
         ))}
       </section>
 
-      <section className="card overflow-x-auto">
-        <div className="px-4 py-3 border-b border-[var(--line)] flex items-center justify-between">
-          <h3 className="font-semibold">Top bots</h3>
-          <Link href="/bots" className="font-mono text-xs text-[var(--accent)]">
-            All bots →
-          </Link>
+      <section className="grid gap-3 lg:grid-cols-2">
+        <PnlBars
+          rows={(data?.top || []).map((b) => ({
+            id: b.id,
+            name: b.name,
+            netPnl: b.netPnl,
+          }))}
+          title="Top bots · |Net PnL|"
+        />
+        <FamilySplit traderPnl={familyPnl.trader} propPnl={familyPnl.prop} />
+      </section>
+
+      <section className="panel overflow-x-auto">
+        <div className="flex items-center justify-between border-b border-[var(--line)] px-4 py-3">
+          <h3 className="font-mono text-xs uppercase tracking-[0.16em]">Top paper bots</h3>
+          <p className="font-mono text-[11px] text-[var(--muted)]">
+            realized {data ? money(data.totalRealized) : "—"} · unrealized{" "}
+            {data ? money(data.totalUnrealized) : "—"} · tap headers to sort
+          </p>
         </div>
-        <table className="w-full text-sm">
-          <thead className="font-mono text-[11px] uppercase tracking-wider text-[var(--muted)]">
-            <tr className="text-left">
-              <th className="px-4 py-2">Bot</th>
-              <th className="px-4 py-2">Family</th>
-              <th className="px-4 py-2">Status</th>
-              <th className="px-4 py-2">Trades</th>
-              <th className="px-4 py-2">Equity</th>
-              <th className="px-4 py-2">Net PnL</th>
+        <table>
+          <thead>
+            <tr>
+              <SortTh label="Bot" column="name" sortKey={sortKey} sortDir={sortDir} onSort={toggle} />
+              <SortTh label="Family" column="family" sortKey={sortKey} sortDir={sortDir} onSort={toggle} />
+              <SortTh label="Status" column="status" sortKey={sortKey} sortDir={sortDir} onSort={toggle} />
+              <SortTh label="Trades" column="tradeCount" sortKey={sortKey} sortDir={sortDir} onSort={toggle} />
+              <SortTh label="Equity" column="equity" sortKey={sortKey} sortDir={sortDir} onSort={toggle} />
+              <SortTh label="Realized" column="realizedPnl" sortKey={sortKey} sortDir={sortDir} onSort={toggle} />
+              <SortTh label="Unrealized" column="unrealizedPnl" sortKey={sortKey} sortDir={sortDir} onSort={toggle} />
+              <SortTh label="Fees" column="feesPaid" sortKey={sortKey} sortDir={sortDir} onSort={toggle} />
+              <SortTh label="Net PnL" column="netPnl" sortKey={sortKey} sortDir={sortDir} onSort={toggle} />
+              <SortTh label="Max DD" column="maxDrawdown" sortKey={sortKey} sortDir={sortDir} onSort={toggle} />
             </tr>
           </thead>
           <tbody>
-            {(data?.top || []).map((b) => (
-              <tr key={b.id} className="border-t border-[var(--line)]">
-                <td className="px-4 py-2">
-                  <Link href={`/bots/${b.id}`} className="hover:text-[var(--accent)]">
-                    {b.strategy?.name || b.id}
+            {sorted.map((b) => (
+              <tr key={b.id}>
+                <td>
+                  <Link
+                    href={`/bots/${encodeURIComponent(b.id)}`}
+                    className="text-[var(--accent)]"
+                  >
+                    {b.name}
                   </Link>
                 </td>
-                <td className="px-4 py-2 font-mono text-xs text-[var(--muted)]">
-                  {b.strategy?.family}
+                <td className="font-mono text-xs text-[var(--muted)]">{b.family}</td>
+                <td className="font-mono text-xs">{b.status}</td>
+                <td className="stat">{b.tradeCount}</td>
+                <td className="stat">{money(b.equity)}</td>
+                <td className="stat" style={{ color: pnlColor(b.realizedPnl) }}>
+                  {money(b.realizedPnl)}
                 </td>
-                <td className="px-4 py-2 font-mono text-xs">{b.status}</td>
-                <td className="px-4 py-2">{b.tradeCount}</td>
-                <td className="px-4 py-2">{money(b.equity)}</td>
-                <td className={`px-4 py-2 ${pnlClass(b.netPnl)}`}>{money(b.netPnl)}</td>
+                <td className="stat" style={{ color: pnlColor(b.unrealizedPnl) }}>
+                  {money(b.unrealizedPnl)}
+                </td>
+                <td className="stat text-[var(--muted)]">{money(b.feesPaid)}</td>
+                <td className="stat" style={{ color: pnlColor(b.netPnl) }}>
+                  {money(b.netPnl)}
+                </td>
+                <td className="stat">{b.maxDrawdown.toFixed(1)}%</td>
               </tr>
             ))}
           </tbody>

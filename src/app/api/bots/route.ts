@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { readStateAsync } from "@/lib/store";
+import { readStateAsync, resetLabBooks } from "@/lib/store";
 import { getStrategy } from "@/lib/strategies/catalog";
 import { startMany, stopAllBots } from "@/lib/bots/runner";
 import { STARTING_BANKROLL } from "@/lib/types";
@@ -37,6 +37,15 @@ export async function POST(req: NextRequest) {
   if (body.action === "stop_all") {
     await stopAllBots();
     return NextResponse.json({ ok: true });
+  }
+  if (body.action === "reset_all") {
+    const state = await resetLabBooks();
+    return NextResponse.json({
+      ok: true,
+      reset: state.bots.length,
+      rules: state.rules,
+      updatedAt: state.updatedAt,
+    });
   }
   return NextResponse.json({ error: "unknown action" }, { status: 400 });
 }

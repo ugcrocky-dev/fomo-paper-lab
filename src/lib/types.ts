@@ -84,10 +84,17 @@ export const DEFAULT_RULES: RiskRules = {
   maxPctBankroll: 5,
   skipPriceAbove: 0,
   skipPriceBelow: 1e-10,
-  slippageBps: 75,
-  takerFeeRate: 0.01,
+  // FOMO spot is ~0.50% (terms: 0.50% min, referral ~0.45%). 1% was double-charging.
+  slippageBps: 30,
+  takerFeeRate: 0.005,
   chargeTakerFees: true,
   promotionDays: 7,
   minTradesForPromotion: 10,
   maxDrawdownPctForPromotion: 35,
 };
+
+/** Default risk overlay applied every tick so buy-and-hold bots can exit. */
+export const DEFAULT_TAKE_PROFIT_PCT = 0.12;
+export const DEFAULT_STOP_LOSS_PCT = 0.08;
+/** Cap how deep a bot can average into one bag before needing an exit. */
+export const MAX_POSITION_PCT_BANKROLL = 0.35;

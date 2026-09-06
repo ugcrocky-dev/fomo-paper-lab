@@ -6,7 +6,13 @@ import {
 } from "../fomo/client";
 import { executeIntent, Intent, revalue } from "../paper/broker";
 import { readStateAsync, writeStateAsync } from "../store";
-import { BotState, RiskRules } from "../types";
+import {
+  BotState,
+  DEFAULT_STOP_LOSS_PCT,
+  DEFAULT_TAKE_PROFIT_PCT,
+  MAX_POSITION_PCT_BANKROLL,
+  RiskRules,
+} from "../types";
 import { getStrategy } from "../strategies/catalog";
 
 type Boards = Awaited<ReturnType<typeof fetchBoards>>;
@@ -516,8 +522,65 @@ function maybePromote(bot: BotState, rules: RiskRules) {
   }
 }
 
+/** Hard TP/SL so buy-heavy strategies don't just bleed fees into bags forever. */
+function riskExitIntents(bot: BotState): Intent[] {
+  const out: Intent[] = [];
+  for (const pos of bot.positions) {
+    if (!(pos.avgPrice > 0) || !(pos.markPrice > 0) || !(pos.units > 0)) continue;
+    const ret = (pos.markPrice - pos.avgPrice) / pos.avgPrice;
+    if (ret >= DEFAULT_TAKE_PROFIT_PCT) {
+      out.push({
+        tokenAddress: pos.tokenAddress,
+        symbol: pos.symbol,
+        chain: pos.chain,
+        side: "SELL",
+        price: pos.markPrice,
+        reason: `risk_tp_${Math.round(DEFAULT_TAKE_PROFIT_PCT * 100)}pct`,
+      });
+    } else if (ret <= -DEFAULT_STOP_LOSS_PCT) {
+      out.push({
+        tokenAddress: pos.tokenAddress,
+        symbol: pos.symbol,
+        chain: pos.chain,
+        side: "SELL",
+        price: pos.markPrice,
+        reason: `risk_sl_${Math.round(DEFAULT_STOP_LOSS_PCT * 100)}pct`,
+      });
+    }
+  }
+  return out.slice(0, 3);
+}
+
+function positionNotional(bot: BotState, chain: string, tokenAddress: string) {
+  const pos = bot.positions.find(
+    (p) =>
+      p.chain === chain &&
+      p.tokenAddress.toLowerCase() === tokenAddress.toLowerCase()
+  );
+  if (!pos) return 0;
+  return pos.units * pos.markPrice;
+}
+
+/** Drop buy spam into the same bag once it's already a large book. */
+function filterIntents(bot: BotState, intents: Intent[]): Intent[] {
+  const bankroll = bot.startingBankroll || 1000;
+  const maxPos = bankroll * MAX_POSITION_PCT_BANKROLL;
+  return intents.filter((intent) => {
+    if (intent.side !== "BUY") return true;
+    const notional = positionNotional(bot, intent.chain, intent.tokenAddress);
+    if (notional >= maxPos) return false;
+    // Keep some dry powder — don't force full deployment every tick.
+    if (bot.cash < bankroll * 0.08) return false;
+    return true;
+  });
+}
+
 export async function tickRunningBots() {
   const state = await readStateAsync();
+  // Migrate live rules if an old 1% fee snapshot is still cached.
+  if (state.rules.takerFeeRate > 0.006) state.rules.takerFeeRate = 0.005;
+  if (state.rules.slippageBps > 40) state.rules.slippageBps = 30;
+
   const running = state.bots.filter(
     (b) => b.status === "running" || b.status === "eligible_for_live"
   );
@@ -538,11 +601,23 @@ export async function tickRunningBots() {
       const strategy = getStrategy(bot.strategyId);
       if (!strategy) continue;
       revalue(bot, marks);
-      const intents =
+
+      // Exits first: free cash before new buys.
+      const exitIntents = riskExitIntents(bot);
+      let made = 0;
+      for (const intent of exitIntents) {
+        if (made >= 3) break;
+        if (executeIntent(bot, state.rules, intent)) {
+          fills += 1;
+          made += 1;
+        }
+      }
+
+      const rawIntents =
         strategy.family === "trader_discovery"
           ? traderIntents(bot, bot.strategyId, boards)
           : propIntents(bot, bot.strategyId, boards);
-      let made = 0;
+      const intents = filterIntents(bot, rawIntents);
       for (const intent of intents) {
         if (made >= 3) break;
         if (executeIntent(bot, state.rules, intent)) {

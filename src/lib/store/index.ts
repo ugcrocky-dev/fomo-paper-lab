@@ -233,3 +233,15 @@ export function patchRules(partial: Partial<RiskRules>) {
   writeState(state);
   return state;
 }
+
+/** Wipe bot books back to $1,000 cash while keeping current risk rules. */
+export async function resetLabBooks() {
+  const prev = await readStateAsync();
+  const next = defaultState();
+  next.rules = { ...DEFAULT_RULES, ...(prev.rules || {}) };
+  // Never re-introduce the broken 1% fee from a stale snapshot.
+  if (next.rules.takerFeeRate > 0.006) next.rules.takerFeeRate = 0.005;
+  if (next.rules.slippageBps > 40) next.rules.slippageBps = 30;
+  await writeStateAsync(next);
+  return next;
+}

@@ -186,14 +186,20 @@ export function readState(): LabState {
 }
 
 export async function readStateAsync(): Promise<LabState> {
-  if (globalThis.__fomoLabState) return globalThis.__fomoLabState;
-
+  // Prefer shared Runtime Cache over process memory so warm instances
+  // do not serve a stale snapshot after another lambda wrote newer state.
   const fromRuntime = await readRuntimeCache();
   if (fromRuntime) {
-    globalThis.__fomoLabState = fromRuntime;
-    writeFs(fromRuntime);
-    return fromRuntime;
+    const local = globalThis.__fomoLabState;
+    if (!local || fromRuntime.updatedAt >= local.updatedAt) {
+      globalThis.__fomoLabState = fromRuntime;
+      writeFs(fromRuntime);
+      return fromRuntime;
+    }
+    return local;
   }
+
+  if (globalThis.__fomoLabState) return globalThis.__fomoLabState;
 
   const fromBlob = await readBlob();
   if (fromBlob) {

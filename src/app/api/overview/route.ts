@@ -8,7 +8,8 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   const state = await readStateAsync();
   const rows = state.bots.map((b) => {
-    const strategy = getStrategy(b.strategyId);
+    const base = getStrategy(b.strategyId);
+    const exec = getStrategy(b.execStrategyId || b.strategyId);
     const netPnl = b.equity - STARTING_BANKROLL;
     return {
       id: b.id,
@@ -20,8 +21,15 @@ export async function GET() {
       feesPaid: b.feesPaid,
       netPnl,
       maxDrawdown: b.maxDrawdown,
-      strategy: strategy
-        ? { name: strategy.name, family: strategy.family, description: strategy.description }
+      adaptationCount: b.adaptationCount || 0,
+      execStrategyId: b.execStrategyId || b.strategyId,
+      strategy: base
+        ? {
+            name: base.name,
+            family: base.family,
+            description: base.description,
+            execName: exec?.name || base.name,
+          }
         : undefined,
     };
   });
@@ -38,6 +46,8 @@ export async function GET() {
       totalRealized: state.bots.reduce((s, b) => s + b.realizedPnl, 0),
       totalUnrealized: state.bots.reduce((s, b) => s + b.unrealizedPnl, 0),
       totalTrades: state.bots.reduce((s, b) => s + b.tradeCount, 0),
+      lastOptimizeAt: state.lastOptimizeAt || null,
+      optimizeLog: (state.optimizeLog || []).slice(0, 12),
       top: rows.slice(0, 25),
     },
     { headers: { "Cache-Control": "no-store" } }

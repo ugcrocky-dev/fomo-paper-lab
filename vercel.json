@@ -3,6 +3,10 @@
     {
       "path": "/api/tick",
       "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/optimize",
+      "schedule": "0 * * * *"
     }
   ]
 }

@@ -38,6 +38,12 @@ export type PaperPosition = {
 export type BotState = {
   id: string;
   strategyId: string;
+  /**
+   * Strategy actually executed on ticks. When a bot is unprofitable, hourly
+   * optimize points this at a winning playbook while keeping strategyId stable
+   * (bot identity / normalize key).
+   */
+  execStrategyId?: string;
   status: BotStatus;
   cash: number;
   equity: number;
@@ -58,6 +64,21 @@ export type BotState = {
   watchedHandles: string[];
   /** tokenKey -> ISO time until which new buys of that token are blocked */
   buyCooldownUntil?: Record<string, string>;
+  adaptationCount?: number;
+  lastAdaptationAt?: string | null;
+  lastAdaptationNote?: string | null;
+};
+
+export type OptimizeAction = {
+  at: string;
+  botId: string;
+  botName: string;
+  action: "retune" | "pause" | "restart_winner_book";
+  fromStrategyId: string;
+  toStrategyId: string;
+  netPnl: number;
+  tradeCount: number;
+  reason: string;
 };
 
 export type RiskRules = {
@@ -77,6 +98,8 @@ export type LabState = {
   updatedAt: string;
   rules: RiskRules;
   bots: BotState[];
+  optimizeLog?: OptimizeAction[];
+  lastOptimizeAt?: string | null;
 };
 
 export const STARTING_BANKROLL = 1000;

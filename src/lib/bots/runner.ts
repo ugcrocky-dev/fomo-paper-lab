@@ -610,7 +610,7 @@ export async function tickRunningBots() {
 
   for (const bot of running) {
     try {
-      const strategy = getStrategy(bot.strategyId);
+      const strategy = getStrategy(bot.execStrategyId || bot.strategyId);
       if (!strategy) continue;
       revalue(bot, marks);
 

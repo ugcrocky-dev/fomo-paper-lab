@@ -25,6 +25,18 @@ type TopBot = {
   maxDrawdown: number;
 };
 
+type OptimizeAction = {
+  at: string;
+  botId: string;
+  botName: string;
+  action: string;
+  fromStrategyId: string;
+  toStrategyId: string;
+  netPnl: number;
+  tradeCount: number;
+  reason: string;
+};
+
 type Overview = {
   updatedAt: string;
   strategyCount: number;
@@ -36,6 +48,8 @@ type Overview = {
   totalRealized: number;
   totalUnrealized: number;
   totalTrades: number;
+  lastOptimizeAt?: string | null;
+  optimizeLog?: OptimizeAction[];
   top: TopBot[];
 };
 
@@ -105,6 +119,15 @@ export default function HomePage() {
             ? `Tick: ${json.ticked ?? json.autoStarted ?? 0} bots, ${json.fills ?? 0} fills`
             : `Tick failed: ${json.error}`
         );
+      } else if (action === "optimize") {
+        const res = await fetch("/api/optimize?force=1", { method: "POST" });
+        const json = await res.json();
+        const n = json.optimize?.actions?.length ?? 0;
+        setMsg(
+          json.ok
+            ? `Optimize: ${n} changes · desk ${money(json.optimize?.deskPnl ?? 0)} · winners ${json.optimize?.winners ?? 0}`
+            : `Optimize failed: ${json.error}`
+        );
       } else {
         const res = await fetch("/api/bots", {
           method: "POST",
@@ -134,8 +157,8 @@ export default function HomePage() {
             </p>
             <h2 className="mt-1 text-3xl font-semibold">Race 100 strategies in paper</h2>
             <p className="mt-2 max-w-2xl text-[var(--muted)]">
-              Net PnL = equity − $1,000 after fees. Tap column headers to sort. Live
-              refresh every 10s — run a tick to advance the book.
+              Net PnL = equity − $1,000 after fees. Hourly optimize retunes losers onto
+              winning playbooks. Tap headers to sort · Live refreshes the UI every 10s.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -150,6 +173,9 @@ export default function HomePage() {
             </button>
             <button className="btn" disabled={!!busy} onClick={() => run("tick")}>
               Tick now
+            </button>
+            <button className="btn" disabled={!!busy} onClick={() => run("optimize")}>
+              Optimize now
             </button>
             <button className="btn btn-danger" disabled={!!busy} onClick={() => run("stop_all")}>
               Stop all
@@ -205,6 +231,53 @@ export default function HomePage() {
           title="Top bots · |Net PnL|"
         />
         <FamilySplit traderPnl={familyPnl.trader} propPnl={familyPnl.prop} />
+      </section>
+
+      <section className="panel overflow-x-auto">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--line)] px-4 py-3">
+          <h3 className="font-mono text-xs uppercase tracking-[0.16em]">
+            Hourly optimize log
+          </h3>
+          <p className="font-mono text-[11px] text-[var(--muted)]">
+            last{" "}
+            {data?.lastOptimizeAt
+              ? new Date(data.lastOptimizeAt).toLocaleString()
+              : "never"}{" "}
+            · losers with ≤ −$20 or deep DD get retuned onto winners
+          </p>
+        </div>
+        {(data?.optimizeLog || []).length === 0 ? (
+          <p className="px-4 py-3 text-sm text-[var(--muted)]">
+            No adaptations yet — cron runs at :00 each hour, or hit Optimize now.
+          </p>
+        ) : (
+          <table>
+            <thead>
+              <tr>
+                <th>When</th>
+                <th>Bot</th>
+                <th>Action</th>
+                <th>PnL</th>
+                <th>Reason</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(data?.optimizeLog || []).map((a, i) => (
+                <tr key={`${a.botId}-${a.at}-${i}`}>
+                  <td className="whitespace-nowrap font-mono text-[11px]">
+                    {new Date(a.at).toLocaleString()}
+                  </td>
+                  <td>{a.botName}</td>
+                  <td className="font-mono text-xs">{a.action}</td>
+                  <td className="stat" style={{ color: pnlColor(a.netPnl) }}>
+                    {money(a.netPnl)}
+                  </td>
+                  <td className="max-w-md text-xs text-[var(--muted)]">{a.reason}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </section>
 
       <section className="panel overflow-x-auto">

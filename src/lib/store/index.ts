@@ -44,6 +44,7 @@ function emptyBot(strategyId: string): BotState {
     positions: [],
     fills: [],
     watchedHandles: [],
+    buyCooldownUntil: {},
   };
 }
 
@@ -66,6 +67,9 @@ function normalize(parsed: LabState): LabState {
     if (!Array.isArray(b.watchedHandles)) b.watchedHandles = [];
     if (!Array.isArray(b.positions)) b.positions = [];
     if (!Array.isArray(b.fills)) b.fills = [];
+    if (!b.buyCooldownUntil || typeof b.buyCooldownUntil !== "object") {
+      b.buyCooldownUntil = {};
+    }
     if (b.fills.length > MAX_FILLS_PER_BOT) {
       b.fills = b.fills.slice(-MAX_FILLS_PER_BOT);
     }

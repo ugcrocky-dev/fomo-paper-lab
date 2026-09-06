@@ -12,6 +12,9 @@ import { ALL_STRATEGIES } from "../strategies/catalog";
 const DATA_DIR = path.join(process.cwd(), "data");
 const FILE = path.join(DATA_DIR, "lab-state.json");
 const BLOB_PATH = "fomo-paper-lab/lab-state.json";
+const RUNTIME_CACHE_KEY = "fomo-paper-lab:lab-state";
+const RUNTIME_CACHE_TTL = 60 * 60 * 24 * 14; // 14 days
+const MAX_FILLS_PER_BOT = 40;
 
 /** Process-local cache so warm serverless instances keep the latest snapshot. */
 declare global {
@@ -63,10 +66,23 @@ function normalize(parsed: LabState): LabState {
     if (!Array.isArray(b.watchedHandles)) b.watchedHandles = [];
     if (!Array.isArray(b.positions)) b.positions = [];
     if (!Array.isArray(b.fills)) b.fills = [];
+    if (b.fills.length > MAX_FILLS_PER_BOT) {
+      b.fills = b.fills.slice(-MAX_FILLS_PER_BOT);
+    }
     return b;
   });
   parsed.rules = { ...DEFAULT_RULES, ...(parsed.rules || {}) };
   return parsed;
+}
+
+function pruneForRemote(state: LabState): LabState {
+  return {
+    ...state,
+    bots: state.bots.map((b) => ({
+      ...b,
+      fills: (b.fills || []).slice(-MAX_FILLS_PER_BOT),
+    })),
+  };
 }
 
 function localFile() {
@@ -75,6 +91,32 @@ function localFile() {
 
 function blobEnabled() {
   return Boolean(process.env.BLOB_READ_WRITE_TOKEN);
+}
+
+async function readRuntimeCache(): Promise<LabState | null> {
+  if (!process.env.VERCEL) return null;
+  try {
+    const { getCache } = await import("@vercel/functions");
+    const cached = await getCache().get(RUNTIME_CACHE_KEY);
+    if (!cached) return null;
+    return normalize(cached as LabState);
+  } catch (err) {
+    console.error("runtime cache readState failed", err);
+    return null;
+  }
+}
+
+async function writeRuntimeCache(state: LabState) {
+  if (!process.env.VERCEL) return;
+  try {
+    const { getCache } = await import("@vercel/functions");
+    await getCache().set(RUNTIME_CACHE_KEY, pruneForRemote(state), {
+      ttl: RUNTIME_CACHE_TTL,
+      tags: ["fomo-lab-state"],
+    });
+  } catch (err) {
+    console.error("runtime cache writeState failed", err);
+  }
 }
 
 async function readBlob(): Promise<LabState | null> {
@@ -98,7 +140,7 @@ async function writeBlob(state: LabState) {
   if (!blobEnabled()) return;
   try {
     const { put } = await import("@vercel/blob");
-    await put(BLOB_PATH, JSON.stringify(state), {
+    await put(BLOB_PATH, JSON.stringify(pruneForRemote(state)), {
       access: "private",
       addRandomSuffix: false,
       allowOverwrite: true,
@@ -128,7 +170,7 @@ function writeFs(state: LabState) {
   const target = localFile();
   const dir = path.dirname(target);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(target, JSON.stringify(state, null, 2));
+  fs.writeFileSync(target, JSON.stringify(pruneForRemote(state), null, 2));
 }
 
 export function readState(): LabState {
@@ -145,12 +187,22 @@ export function readState(): LabState {
 
 export async function readStateAsync(): Promise<LabState> {
   if (globalThis.__fomoLabState) return globalThis.__fomoLabState;
+
+  const fromRuntime = await readRuntimeCache();
+  if (fromRuntime) {
+    globalThis.__fomoLabState = fromRuntime;
+    writeFs(fromRuntime);
+    return fromRuntime;
+  }
+
   const fromBlob = await readBlob();
   if (fromBlob) {
     globalThis.__fomoLabState = fromBlob;
     writeFs(fromBlob);
+    void writeRuntimeCache(fromBlob);
     return fromBlob;
   }
+
   return readState();
 }
 
@@ -158,6 +210,7 @@ export function writeState(state: LabState) {
   state.updatedAt = new Date().toISOString();
   globalThis.__fomoLabState = state;
   writeFs(state);
+  void writeRuntimeCache(state);
   void writeBlob(state);
 }
 
@@ -165,7 +218,7 @@ export async function writeStateAsync(state: LabState) {
   state.updatedAt = new Date().toISOString();
   globalThis.__fomoLabState = state;
   writeFs(state);
-  await writeBlob(state);
+  await Promise.all([writeRuntimeCache(state), writeBlob(state)]);
 }
 
 export function patchRules(partial: Partial<RiskRules>) {

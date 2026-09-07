@@ -67,8 +67,11 @@ export async function optimizeLab(opts?: {
 }): Promise<OptimizeResult> {
   const state = await readStateAsync();
   const at = new Date().toISOString();
-  const minRuntime = opts?.force ? 0 : MIN_RUNTIME_MS;
-  const minTrades = opts?.force ? 3 : MIN_TRADES;
+  const force = Boolean(opts?.force);
+  const minRuntime = force ? 0 : MIN_RUNTIME_MS;
+  const minTrades = force ? 1 : MIN_TRADES;
+  const lossThreshold = force ? -0.01 : LOSS_THRESHOLD;
+  const maxActions = force ? 100 : MAX_ACTIONS_PER_RUN;
 
   const scored = state.bots
     .map((b) => ({
@@ -82,18 +85,25 @@ export async function optimizeLab(opts?: {
   const running = scored.filter(
     (s) => s.bot.status === "running" || s.bot.status === "eligible_for_live"
   );
-  const winners = running.filter((s) => s.pnl > 0 && s.bot.tradeCount >= 3);
-  const donorIds = (
-    winners.length
-      ? winners
-      : running.filter((s) => s.bot.tradeCount >= 1).slice(0, 10)
-  ).map((s) => s.execId);
+  // Prefer unique winning playbooks so we don't clone one bag onto half the desk.
+  const winners = running.filter((s) => s.pnl > 25 && s.bot.tradeCount >= 3);
+  const uniqueDonors: string[] = [];
+  for (const s of winners.length ? winners : running.filter((x) => x.pnl > 0)) {
+    if (!uniqueDonors.includes(s.execId)) uniqueDonors.push(s.execId);
+    if (uniqueDonors.length >= 5) break;
+  }
+  if (!uniqueDonors.length) {
+    for (const s of running.filter((x) => x.bot.tradeCount >= 1).slice(0, 10)) {
+      if (!uniqueDonors.includes(s.execId)) uniqueDonors.push(s.execId);
+    }
+  }
+  const donorIds = uniqueDonors;
 
   const losers = running.filter((s) => {
     if (s.bot.tradeCount < minTrades) return false;
     if (runtimeMs(s.bot) < minRuntime) return false;
-    if (s.pnl <= LOSS_THRESHOLD) return true;
-    if (s.pnl < 0 && s.bot.maxDrawdown >= DD_THRESHOLD) return true;
+    if (s.pnl <= lossThreshold) return true;
+    if (!force && s.pnl < 0 && s.bot.maxDrawdown >= DD_THRESHOLD) return true;
     return false;
   });
 
@@ -101,7 +111,7 @@ export async function optimizeLab(opts?: {
   let donorCursor = 0;
 
   for (const loser of losers) {
-    if (actions.length >= MAX_ACTIONS_PER_RUN) break;
+    if (actions.length >= maxActions) break;
     const bot = loser.bot;
     const fromId = activeStrategyId(bot);
     const adaptations = bot.adaptationCount || 0;
@@ -110,7 +120,8 @@ export async function optimizeLab(opts?: {
 
     flattenBot(bot, state.rules, "optimize_flatten");
 
-    if (adaptations >= MAX_ADAPTATIONS && priorPnl < 0) {
+    // Only pause on scheduled daily pass — force recovery always retunes.
+    if (!force && adaptations >= MAX_ADAPTATIONS && priorPnl < 0) {
       bot.status = "stopped";
       bot.stoppedAt = at;
       resetBook(bot);

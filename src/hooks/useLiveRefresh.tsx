@@ -5,17 +5,18 @@ import { useCallback, useEffect, useRef, useState } from "react";
 /** How often the UI reloads overview/tables. */
 export const DASHBOARD_POLL_MS = 10_000;
 /**
- * How often an open Live desk advances the paper book.
- * Keep this slower than a minute — faster ticks + hard SL caused stop-hunt churn.
+ * Book ticks are cron-only (hourly) to stay inside FOMO's ~1,000 free credits/mo.
+ * Live mode no longer POSTs /api/tick on a keepalive — that burned credits.
  */
-export const TICK_KEEPALIVE_MS = 180_000;
+export const TICK_KEEPALIVE_MS = 60 * 60 * 1000;
 
 export function useLiveRefresh(
   load: () => Promise<void>,
   intervalMs = DASHBOARD_POLL_MS,
   opts?: { tickKeepalive?: boolean }
 ) {
-  const tickKeepalive = opts?.tickKeepalive ?? true;
+  // Default off — hourly Vercel cron advances the book.
+  const tickKeepalive = opts?.tickKeepalive ?? false;
   const [updatedAt, setUpdatedAt] = useState<string | null>(null);
   const [live, setLive] = useState(true);
   const [lastTick, setLastTick] = useState<{
@@ -108,7 +109,7 @@ export function LiveBadge({
           className="h-1.5 w-1.5 rounded-full"
           style={{ background: live ? "var(--accent)" : "var(--muted)" }}
         />
-        {live ? "Live" : "Paused"} · UI 10s · book tick 3m
+        {live ? "Live" : "Paused"} · UI 10s · book hourly
       </span>
       <span>
         {age == null ? "Loading…" : age < 2 ? "Just updated" : `Updated ${age}s ago`}

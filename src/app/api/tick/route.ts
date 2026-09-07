@@ -17,6 +17,7 @@ async function handleTick() {
     );
     let autoStarted = 0;
     if (!running.length) {
+      // Free-credit mode: start top-5 elite only, never the full 100.
       autoStarted = await startMany("all");
     }
     const result = await tickRunningBots();

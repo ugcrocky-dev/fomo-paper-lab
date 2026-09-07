@@ -4,8 +4,9 @@ Paper-trading lab racing **100 bots** ($1,000 each) on live [FOMO](https://fomo.
 
 ## What it does
 
-- Pulls FOMO leaderboards (`24h` / `7d` / `30d` / `all`) via `api.fomoapi.io` (keyless)
-- Runs 50 trader-discovery bots + 50 proprietary bots through a paper broker
+- Pulls FOMO leaderboards via `api.fomoapi.io` (requires `FOMO_API_KEY`; free tier ~1,000 credits/mo)
+- Live fleet is **top 5 by net PnL**; catalog still has 100 strategies
+- Hourly cron tick fetches **one** `24h` board (~720 credits/mo); boards cached ≥55 min
 - Dashboard: Overview · Bots · Traders · Lab · Trades · Rules
 - Promotion gate: ≥7 continuous paper days before `eligible_for_live`
 
@@ -16,9 +17,9 @@ npm install
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000), click **Start all**, then **Run tick**.
+Open [http://localhost:3000](http://localhost:3000), click **Start top 5**, then **Run tick**.
 
-Optional: set `FOMO_API_KEY` for deeper user endpoints later (not required for v1).
+Required in production: set `FOMO_API_KEY` (https://fomoapi.io/dashboard). Leaderboards are no longer keyless.
 
 ## Stack
 

@@ -100,7 +100,16 @@ export type LabState = {
   bots: BotState[];
   optimizeLog?: OptimizeAction[];
   lastOptimizeAt?: string | null;
+  /** Last successful FOMO leaderboard fetch (ISO). Used to throttle credits. */
+  lastBoardsAt?: string | null;
+  /** Cached boards JSON from last fetch — reused until MIN board age elapses. */
+  cachedBoards?: unknown | null;
 };
+
+/** How many bots stay live under the free-credit budget. */
+export const ELITE_FLEET_SIZE = 5;
+/** Don't re-hit FOMO API more often than this (hourly cron + UI safety). */
+export const MIN_BOARDS_AGE_MS = 55 * 60 * 1000;
 
 export const STARTING_BANKROLL = 1000;
 

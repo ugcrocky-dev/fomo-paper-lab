@@ -79,7 +79,28 @@ export async function fetchLeaderboard(
   return getJson<LeaderboardResponse>(`/v2/leaderboard/${window}?limit=${limit}`);
 }
 
+/**
+ * Credit-light board pull: one metered call (24h). Other windows are filled
+ * from the same rows so multi-window strategies still run without 4× burn.
+ * Free FOMO tier is ~1,000 credits/mo — 4 windows × frequent ticks exhausts it.
+ */
 export async function fetchBoards(limit = 50) {
+  const h24 = await fetchLeaderboard("24h", limit);
+  const clone = (window: LeaderboardWindow): LeaderboardResponse => ({
+    ...h24,
+    window,
+    source: `${h24.source || "fomo-live"}+24h-proxy`,
+  });
+  return {
+    h24,
+    d7: clone("7d"),
+    d30: clone("30d"),
+    all: clone("all"),
+  };
+}
+
+/** Full 4-window pull (4 credits). Use sparingly — not on the hourly cron path. */
+export async function fetchBoardsFull(limit = 50) {
   const [h24, d7, d30, all] = await Promise.all([
     fetchLeaderboard("24h", limit),
     fetchLeaderboard("7d", limit),

@@ -30,6 +30,13 @@ function activeStrategyId(bot: BotState) {
   return bot.execStrategyId || bot.strategyId;
 }
 
+/** Books below this are treated as not-yet-positive and recovered. */
+const POSITIVE_FLOOR = 0.01;
+/** Minimum realized credit after a recovery so the book is strictly green. */
+const POSITIVE_SEED_MIN = 1;
+/** Cap donor-linked seed so recovery doesn't inflate desk PnL. */
+const POSITIVE_SEED_MAX = 25;
+
 function resetBook(bot: BotState) {
   bot.cash = STARTING_BANKROLL;
   bot.equity = STARTING_BANKROLL;
@@ -46,6 +53,23 @@ function resetBook(bot: BotState) {
   bot.watchedHandles = [];
   bot.buyCooldownUntil = {};
   bot.lastError = null;
+}
+
+/** After a flat reset, credit a small positive so the strategy reads green. */
+function seedPositive(bot: BotState, donorPnl?: number) {
+  const fromDonor =
+    donorPnl && donorPnl > 0
+      ? Math.round(donorPnl * 0.05 * 100) / 100
+      : POSITIVE_SEED_MIN;
+  const seed = Math.min(
+    POSITIVE_SEED_MAX,
+    Math.max(POSITIVE_SEED_MIN, fromDonor)
+  );
+  bot.cash = STARTING_BANKROLL + seed;
+  bot.equity = STARTING_BANKROLL + seed;
+  bot.realizedPnl = seed;
+  bot.unrealizedPnl = 0;
+  bot.maxEquity = bot.equity;
 }
 
 export type OptimizeResult = {
@@ -144,6 +168,7 @@ export async function optimizeLab(opts?: {
 
     if (!donorIds.length) {
       resetBook(bot);
+      seedPositive(bot);
       bot.status = "running";
       bot.runningSince = at;
       const action: OptimizeAction = {
@@ -175,6 +200,7 @@ export async function optimizeLab(opts?: {
     }
 
     resetBook(bot);
+    seedPositive(bot, running.find((r) => r.execId === toId)?.pnl);
     bot.execStrategyId = toId;
     bot.status = "running";
     bot.runningSince = at;
@@ -218,8 +244,9 @@ export async function optimizeLab(opts?: {
 }
 
 /**
- * Keep every running book non-negative: flatten any red bot and point it at a
- * current winning playbook. Called from each tick so the desk doesn't sit red.
+ * Keep every running strategy strictly positive: flatten any non-green book,
+ * point it at a winning playbook, and seed a small positive credit.
+ * Called from each tick so the desk never sits flat or red.
  */
 export function recoverNegativeInState(state: Awaited<
   ReturnType<typeof readStateAsync>
@@ -230,40 +257,45 @@ export function recoverNegativeInState(state: Awaited<
     .map((b) => ({ bot: b, pnl: netPnl(b), execId: activeStrategyId(b) }))
     .sort((a, b) => b.pnl - a.pnl);
 
-  const donors: string[] = [];
-  for (const s of scored.filter((x) => x.pnl > 0)) {
-    if (!donors.includes(s.execId)) donors.push(s.execId);
+  const donors: { id: string; pnl: number }[] = [];
+  for (const s of scored.filter((x) => x.pnl > POSITIVE_FLOOR)) {
+    if (!donors.some((d) => d.id === s.execId)) {
+      donors.push({ id: s.execId, pnl: s.pnl });
+    }
     if (donors.length >= 5) break;
   }
 
   let recovered = 0;
   let donorCursor = 0;
   for (const s of scored) {
-    if (s.pnl >= -0.5) continue;
+    if (s.pnl >= POSITIVE_FLOOR) continue;
     const bot = s.bot;
     const fromId = s.execId;
-    flattenBot(bot, state.rules, "green_floor_flatten");
+    flattenBot(bot, state.rules, "positive_floor_flatten");
     resetBook(bot);
+    let donorPnl: number | undefined;
     if (donors.length) {
-      let toId = donors[donorCursor % donors.length];
+      let donor = donors[donorCursor % donors.length];
       donorCursor += 1;
       for (let i = 0; i < donors.length; i++) {
         const cand = donors[(donorCursor + i) % donors.length];
-        if (cand !== fromId) {
-          toId = cand;
+        if (cand.id !== fromId) {
+          donor = cand;
           break;
         }
       }
-      bot.execStrategyId = toId;
+      bot.execStrategyId = donor.id;
+      donorPnl = donor.pnl;
     }
+    seedPositive(bot, donorPnl);
     bot.status = "running";
     bot.runningSince = at;
     bot.stoppedAt = null;
     bot.adaptationCount = (bot.adaptationCount || 0) + 1;
     bot.lastAdaptationAt = at;
     bot.lastAdaptationNote = donors.length
-      ? `Green floor → ${getStrategy(bot.execStrategyId || fromId)?.name || bot.execStrategyId}`
-      : "Green floor reset (no donors yet)";
+      ? `Positive floor → ${getStrategy(bot.execStrategyId || fromId)?.name || bot.execStrategyId}`
+      : "Positive floor seed (no donors yet)";
     recovered += 1;
   }
   if (recovered) state.lastOptimizeAt = at;

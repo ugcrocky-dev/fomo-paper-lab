@@ -10,11 +10,50 @@ import { readStateAsync, writeStateAsync } from "../store";
 import {
   BotState,
   DEFAULT_TAKE_PROFIT_PCT,
+  ELITE_FLEET_SIZE,
   MAX_POSITION_PCT_BANKROLL,
+  MIN_BOARDS_AGE_MS,
   REBUY_COOLDOWN_MS,
   RiskRules,
+  STARTING_BANKROLL,
 } from "../types";
 import { getStrategy } from "../strategies/catalog";
+
+function botNetPnl(bot: BotState) {
+  return bot.equity - (bot.startingBankroll || STARTING_BANKROLL);
+}
+
+/**
+ * Keep only the top-N books live. Catalog stays at 100; free FOMO credits
+ * can't afford a full fleet tick cadence.
+ */
+export function enforceEliteFleet(
+  state: Awaited<ReturnType<typeof readStateAsync>>,
+  size = ELITE_FLEET_SIZE
+): { elite: string[]; stopped: number; started: number } {
+  const at = new Date().toISOString();
+  const ranked = [...state.bots].sort((a, b) => botNetPnl(b) - botNetPnl(a));
+  const elite = ranked.slice(0, size);
+  const eliteIds = new Set(elite.map((b) => b.id));
+  let stopped = 0;
+  let started = 0;
+  for (const bot of state.bots) {
+    if (eliteIds.has(bot.id)) {
+      if (bot.status !== "running" && bot.status !== "eligible_for_live") {
+        bot.status = "running";
+        bot.runningSince = bot.runningSince ?? at;
+        bot.stoppedAt = null;
+        bot.lastError = null;
+        started += 1;
+      }
+    } else if (bot.status === "running" || bot.status === "eligible_for_live") {
+      bot.status = "stopped";
+      bot.stoppedAt = at;
+      stopped += 1;
+    }
+  }
+  return { elite: elite.map((b) => b.id), stopped, started };
+}
 
 type Boards = Awaited<ReturnType<typeof fetchBoards>>;
 
@@ -594,17 +633,44 @@ export async function tickRunningBots() {
   if (state.rules.takerFeeRate > 0.006) state.rules.takerFeeRate = 0.005;
   if (state.rules.slippageBps > 40) state.rules.slippageBps = 30;
 
+  const fleet = enforceEliteFleet(state);
   const running = state.bots.filter(
     (b) => b.status === "running" || b.status === "eligible_for_live"
   );
   const errors: string[] = [];
   let fills = 0;
-  if (!running.length) return { ticked: 0, fills: 0, errors, recovered: 0 };
+  let boardsFromCache = false;
+  if (!running.length) {
+    await writeStateAsync(state);
+    return {
+      ticked: 0,
+      fills: 0,
+      errors,
+      recovered: 0,
+      elite: fleet.elite,
+      boardsFromCache,
+    };
+  }
 
   let boards: Awaited<ReturnType<typeof fetchBoards>> | null = null;
   let marks: { tokenAddress: string; chain: string; price: number }[] = [];
+  const lastAt = state.lastBoardsAt
+    ? new Date(state.lastBoardsAt).getTime()
+    : 0;
+  const cacheFresh =
+    Boolean(state.cachedBoards) &&
+    Number.isFinite(lastAt) &&
+    Date.now() - lastAt < MIN_BOARDS_AGE_MS;
+
   try {
-    boards = await fetchBoards(50);
+    if (cacheFresh) {
+      boards = state.cachedBoards as Awaited<ReturnType<typeof fetchBoards>>;
+      boardsFromCache = true;
+    } else {
+      boards = await fetchBoards(50);
+      state.cachedBoards = boards;
+      state.lastBoardsAt = new Date().toISOString();
+    }
     const priceMap = buildPriceMap(boards);
     marks = [...priceMap.values()].map((v) => ({
       tokenAddress: v.tokenAddress,
@@ -661,8 +727,17 @@ export async function tickRunningBots() {
   }
 
   const recovered = recoverNegativeInState(state);
+  // Positive-floor may have restarted non-elite books — clamp again.
+  enforceEliteFleet(state);
   await writeStateAsync(state);
-  return { ticked: running.length, fills, errors, recovered };
+  return {
+    ticked: running.length,
+    fills,
+    errors,
+    recovered,
+    elite: fleet.elite,
+    boardsFromCache,
+  };
 }
 
 export async function setBotStatus(botId: string, status: "running" | "stopped") {
@@ -685,15 +760,27 @@ export async function startMany(
   family: "trader_discovery" | "proprietary" | "all"
 ) {
   const state = await readStateAsync();
+  // Free-credit mode: never light up the full 100. Rank within family, keep top N.
+  const at = new Date().toISOString();
+  const pool = state.bots.filter((bot) => {
+    const s = getStrategy(bot.strategyId);
+    if (!s) return false;
+    if (family !== "all" && s.family !== family) return false;
+    return true;
+  });
+  pool.sort((a, b) => botNetPnl(b) - botNetPnl(a));
+  const keep = new Set(pool.slice(0, ELITE_FLEET_SIZE).map((b) => b.id));
   let n = 0;
   for (const bot of state.bots) {
-    const s = getStrategy(bot.strategyId);
-    if (!s) continue;
-    if (family !== "all" && s.family !== family) continue;
-    bot.status = "running";
-    bot.runningSince = bot.runningSince ?? new Date().toISOString();
-    bot.stoppedAt = null;
-    n += 1;
+    if (keep.has(bot.id)) {
+      bot.status = "running";
+      bot.runningSince = bot.runningSince ?? at;
+      bot.stoppedAt = null;
+      n += 1;
+    } else if (bot.status === "running" || bot.status === "eligible_for_live") {
+      bot.status = "stopped";
+      bot.stoppedAt = at;
+    }
   }
   await writeStateAsync(state);
   return n;

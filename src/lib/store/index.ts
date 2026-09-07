@@ -59,6 +59,8 @@ export function defaultState(): LabState {
     bots: ALL_STRATEGIES.map((s) => emptyBot(s.id)),
     optimizeLog: [],
     lastOptimizeAt: null,
+    lastBoardsAt: null,
+    cachedBoards: null,
   };
 }
 
@@ -88,6 +90,8 @@ function normalize(parsed: LabState): LabState {
   parsed.rules = { ...DEFAULT_RULES, ...(parsed.rules || {}) };
   if (!Array.isArray(parsed.optimizeLog)) parsed.optimizeLog = [];
   if (parsed.lastOptimizeAt === undefined) parsed.lastOptimizeAt = null;
+  if (parsed.lastBoardsAt === undefined) parsed.lastBoardsAt = null;
+  if (parsed.cachedBoards === undefined) parsed.cachedBoards = null;
   return parsed;
 }
 

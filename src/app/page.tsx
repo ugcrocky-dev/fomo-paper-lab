@@ -153,18 +153,18 @@ export default function HomePage() {
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <p className="font-mono text-[11px] uppercase tracking-[0.2em] text-[var(--muted)]">
-              Simulation desk · $1,000 / bot · FOMO taker fees on
+              Elite desk · top 5 live · $1,000 / bot · FOMO ~1k credits/mo
             </p>
-            <h2 className="mt-1 text-3xl font-semibold">Race 100 strategies in paper</h2>
+            <h2 className="mt-1 text-3xl font-semibold">Race strategies — top 5 live</h2>
             <p className="mt-2 max-w-2xl text-[var(--muted)]">
-              Net PnL = equity − $1,000 after fees. Each tick auto-recovers any red
-              book onto winning playbooks so strategies stay non-negative. Tap
-              headers to sort · Live refreshes the UI every 10s.
+              Catalog stays at 100; only the top 5 by net PnL trade. Hourly tick
+              pulls one 24h leaderboard (~720 credits/mo). Tap headers to sort ·
+              Live refreshes the UI every 10s (cron advances the book).
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
             <button className="btn btn-accent" disabled={!!busy} onClick={() => run("start_all")}>
-              Start all
+              Start top 5
             </button>
             <button className="btn" disabled={!!busy} onClick={() => run("start_traders")}>
               Trader bots

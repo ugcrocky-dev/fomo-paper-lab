@@ -5,6 +5,7 @@ import {
   tokenMeta,
 } from "../fomo/client";
 import { executeIntent, Intent, revalue } from "../paper/broker";
+import { recoverNegativeInState } from "./optimize";
 import { readStateAsync, writeStateAsync } from "../store";
 import {
   BotState,
@@ -651,8 +652,9 @@ export async function tickRunningBots() {
     }
   }
 
+  const recovered = recoverNegativeInState(state);
   await writeStateAsync(state);
-  return { ticked: running.length, fills, errors };
+  return { ticked: running.length, fills, errors, recovered };
 }
 
 export async function setBotStatus(botId: string, status: "running" | "stopped") {

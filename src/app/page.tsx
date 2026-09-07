@@ -157,8 +157,9 @@ export default function HomePage() {
             </p>
             <h2 className="mt-1 text-3xl font-semibold">Race 100 strategies in paper</h2>
             <p className="mt-2 max-w-2xl text-[var(--muted)]">
-              Net PnL = equity − $1,000 after fees. Daily optimize retunes losers onto
-              winning playbooks. Tap headers to sort · Live refreshes the UI every 10s.
+              Net PnL = equity − $1,000 after fees. Each tick auto-recovers any red
+              book onto winning playbooks so strategies stay non-negative. Tap
+              headers to sort · Live refreshes the UI every 10s.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
